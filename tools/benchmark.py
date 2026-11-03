@@ -17,7 +17,7 @@ a = ap.parse_args()
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 tmp = tempfile.mkdtemp(prefix='mv_bench_')
 for f in ('server.js', 'package.json'): shutil.copy(os.path.join(root, f), tmp)
-shutil.copytree(os.path.join(root, 'public'), os.path.join(tmp, 'public')); shutil.copytree(os.path.join(root, 'node_modules'), os.path.join(tmp, 'node_modules')); os.mkdir(os.path.join(tmp, 'uploads'))
+[shutil.copy(os.path.join(root, f), tmp) for f in ('index.html', 'three.min.js', 'GLTFLoader.js', 'SkeletonUtils.js', 'TransformControls.js', 'csg.js', 'prim.js')]; shutil.copytree(os.path.join(root, 'models'), os.path.join(tmp, 'models')); shutil.copytree(os.path.join(root, 'node_modules'), os.path.join(tmp, 'node_modules')); os.mkdir(os.path.join(tmp, 'uploads'))
 random.seed(9)
 def pieza():
     return {'type': random.choice(['box', 'cylinder', 'sphere', 'cone']), 'color': '#%06x' % random.randrange(0x555555, 0xffffff), 'mat': 'mate', 'tex': '',
@@ -25,7 +25,7 @@ def pieza():
 items = [{'id': i + 1, 'owner': 'u%d' % (i % 20), 'ownerName': 'x', 'pos': [random.uniform(-a.area, a.area), 0, random.uniform(-a.area, a.area)], 'rot': [0, random.uniform(0, 6.28), 0], 'scale': [1, 1, 1],
           'children': [pieza() for _ in range(a.piezas)]} for i in range(a.grupos)]
 json.dump({'next': a.grupos + 1, 'assets': {}, 'inv': {}, 'tpl': {}, 'worlds': {'main': {'name': 'Mundo principal', 'theme': 'pradera', 'owner': '', 'ownerName': 'Sistema', 'created': 0, 'items': items, 'parcels': []}}}, open(os.path.join(tmp, 'world.json'), 'w'))
-p_idx = os.path.join(tmp, 'public', 'index.html'); h = open(p_idx, encoding='utf8').read(); marker = 'var clock=new THREE.Clock();'
+p_idx = os.path.join(tmp, 'index.html'); h = open(p_idx, encoding='utf8').read(); marker = 'var clock=new THREE.Clock();'
 assert h.count(marker) == 1, 'no se encontró el punto donde enganchar la medición'
 open(p_idx, 'w', encoding='utf8').write(h.replace(marker, "window.__dbg={renderer:renderer,view:function(t,p,r){th=t;ph=p;rad=r;target.set(0,0,0);updCam()}};" + marker))
 srv = subprocess.Popen(['node', 'server.js'], cwd=tmp, env=dict(os.environ, PORT=str(a.puerto)), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); time.sleep(1.5)

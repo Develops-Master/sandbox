@@ -12,7 +12,8 @@ const ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map(x => x.trim()
 const MAX_CONN_IP = Math.max(1, parseInt(process.env.MAX_CONN_IP, 10) || 20);
 try { fs.mkdirSync(DATA, { recursive: true }); } catch (e) {}
 const FILE = path.join(DATA, 'world.json');
-const PUB = path.join(__dirname, 'public');
+const PUB = __dirname;   // v6.53: el cliente está en la raíz; solo se sirven los archivos de la lista PUBLIC_FILES (nunca server.js, world.json, package.json…)
+const PUBLIC_FILES = /^\/(index\.html|three\.min\.js|GLTFLoader\.js|SkeletonUtils\.js|TransformControls\.js|csg\.js|prim\.js|models\/[\w.-]+\.glb)$/;
 const UP = path.join(DATA, 'uploads');
 // IP del cliente: con TRUST_PROXY se toma la última dirección de X-Forwarded-For (la que añadió tu proxy); sin él, la del socket (así nadie puede falsearla con una cabecera)
 function clientIp(req) {
@@ -38,12 +39,14 @@ const MAX_WORLDS = 50, MAX_WORLDS_PER_USER = 5;
 const MAX_PARCELS = 100, MAX_PARCELS_PER_USER = 3, P_MIN = 4, P_MAX = 32, P_DEF_MAX = 100;
 const inP = (p, x, z) => x >= p.x1 && x < p.x2 && z >= p.z1 && z < p.z2;
 const parcelAt = (W, x, z) => (W.parcels || []).find(p => inP(p, x, z));
+const isGuest = (p, uid) => Array.isArray(p.guests) && p.guests.some(g => g.uid === uid);   // v6.52: invitados a volar
+const MAX_GUESTS = 10;
 const countIn = (W, p) => W.items.filter(i => !i.att && inP(p, i.pos[0], i.pos[2])).length;
 function canPlace(W, me, pos, oldPos) {   // null si se puede dejar un objeto ahí; si no, el motivo
   const p = parcelAt(W, pos[0], pos[2]);
   if (!p) return null;
   if (oldPos) { const q = parcelAt(W, oldPos[0], oldPos[2]); if (q === p) return null; }   // ya estaba dentro: moverlo no cambia nada
-  if (p.build === 'owner' && p.owner !== me.uid) return 'La parcela «' + p.name + '» es de ' + p.ownerName + ': solo su dueño puede construir ahí.';
+  if (p.build === 'owner' && p.owner !== me.uid && !isGuest(p, me.uid)) return 'La parcela «' + p.name + '» es de ' + p.ownerName + ': solo su dueño e invitados pueden construir ahí.';   // v6.52: los invitados también construyen
   if (countIn(W, p) >= p.max) return 'La parcela «' + p.name + '» ya tiene el máximo de ' + p.max + ' objetos.';
   return null;
 }
@@ -136,7 +139,7 @@ function cleanCsg(c) {
   if (!c.g.every(n => Number.isInteger(n) && n >= 0 && n % 3 === 0) || c.g[0] + c.g[1] !== c.v.length / 3) return null;
   return { v: c.v.slice(), g: c.g.slice() };
 }
-const PRIM_TYPES = new Set(['box', 'cylinder', 'prism']);   // v6.33: parámetros de prim (ver public/prim.js)
+const PRIM_TYPES = new Set(['box', 'cylinder', 'prism']);   // v6.33: parámetros de prim (ver prim.js)
 function cleanPrim(p) {
   if (!p || typeof p !== 'object') return null;
   const r = (v, a, b, d) => { v = Number(v); return Number.isFinite(v) ? Math.min(b, Math.max(a, v)) : d; };
@@ -295,8 +298,8 @@ const server = http.createServer((req, res) => {
   if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); return res.end(); }
   if (p === '/') p = '/index.html';
   const up = /^\/uploads\/([0-9a-f]{64}\.(glb|png|jpg|webp))$/.exec(p);   // archivos subidos: solo nombres por hash conocidos
-  const f = up ? path.join(UP, up[1]) : path.normalize(path.join(PUB, p));
-  if (!up && !f.startsWith(PUB)) { res.writeHead(403); return res.end(); }
+  if (!up && !PUBLIC_FILES.test(p)) { res.writeHead(404); return res.end('No encontrado'); }
+  const f = up ? path.join(UP, up[1]) : path.join(PUB, p);
   fs.readFile(f, (e, d) => {
     if (e || (up && !world.assets[up[1]])) { res.writeHead(404); return res.end('No encontrado'); }
     const h = { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff' };
@@ -323,6 +326,9 @@ const bcast = (m, except, wid) => { for (const [ws, p] of players) if (ws !== ex
 const NEAR_IN = 170, NEAR_OUT = 200;
 const grpR = c => { const k = Math.max(...c.scale); if (!c.children) return k; let r = 0; for (const q of c.children) r = Math.max(r, Math.hypot(q.pos[0], q.pos[1], q.pos[2]) + grpR(q)); return Math.max(k, r * k); };
 const itRadius = it => { const k = Math.max(...it.scale); if (!it.children) return k; let r = 0; for (const c of it.children) r = Math.max(r, Math.hypot(c.pos[0], c.pos[1], c.pos[2]) + grpR(c)); return Math.max(k, r * k); };
+// v6.53: altura máxima a la que alguien puede estar legítimamente sin volar en (x, z): la parte más alta de los objetos cercanos (cota conservadora con itRadius) más un salto (1 m) y margen
+const STAND_MARGIN = 1.6;
+const standCeil = (W, x, z) => { let top = 0; for (const it of W.items) { if (it.att || !it.pos) continue; const r = itRadius(it); if (Math.hypot(x - it.pos[0], z - it.pos[2]) <= r + 1 && it.pos[1] + r > top) top = it.pos[1] + r; } return top + STAND_MARGIN; };
 const relevant = (me, it, lim) => it.att || it.owner === me.uid || Math.hypot(it.pos[0] - me.x, it.pos[2] - me.z) - itRadius(it) < lim;
 const knownOf = me => (me.known = me.known || new Set());
 function ibcast(m, except, wid) {   // difunde add / upd / del / fx de un objeto solo a quien lo tiene o debería tenerlo
@@ -568,9 +574,11 @@ wss.on('connection', (ws, req) => {
       if (![m.x, m.y, m.z, m.ry].every(Number.isFinite)) return;
       const st = [0, 1, 2, 3, 4].includes(m.st) ? m.st : 0;   // 0 reposo, 1 caminar, 2 correr, 3 en el aire, 4 volando (v6.48)
       {   // v6.49: parcela con «volar: solo su dueño»: quien manda estado 4 (volando) dentro de ella sin permiso no se difunde y vuelve a donde estaba
-        const par = st === 4 ? parcelAt(W, m.x, m.z) : null;
-        if (par && par.fly === 'owner' && par.owner !== me.uid && !me.admin && !(W.owner && W.owner === me.uid)) {
-          if (Number.isFinite(me.x) && Number.isFinite(me.z)) send(ws, { t: 'tp', x: me.x, y: 0, z: me.z });
+        // v6.53: además se valida la ALTURA, mintiendo el estado (0 o 3) no sirve: si está más alto de lo que permiten el suelo, los objetos y un salto, se rechaza igual
+        const par = parcelAt(W, m.x, m.z);
+        if (par && par.fly === 'owner' && par.owner !== me.uid && !me.admin && !(W.owner && W.owner === me.uid) && !isGuest(par, me.uid)
+            && (st === 4 || (m.y > STAND_MARGIN && m.y > standCeil(W, m.x, m.z)))) {
+          if (Number.isFinite(me.x) && Number.isFinite(me.z)) send(ws, { t: 'tp', x: me.x, y: Number.isFinite(me.y) ? me.y : 0, z: me.z });
           return;
         }
       }
@@ -759,6 +767,20 @@ wss.on('connection', (ws, req) => {
         if (m.fly === 'all' || m.fly === 'owner') p.fly = m.fly;   // v6.47: quién puede volar en la parcela
         if (Number.isFinite(m.max)) p.max = Math.min(500, Math.max(1, Math.round(m.max)));
       }
+      persist(); bcast({ t: 'parcels', list: W.parcels }, null, me.world);
+    } else if (m.t === 'pguest') {        // v6.52: invitar (volar y construir) a un jugador (add = id de jugador presente) o quitarlo (del = uid)
+      const p = W.parcels.find(x => x.id === m.id);
+      if (!p || (p.owner !== me.uid && !me.admin && !(W.owner && W.owner === me.uid))) return;
+      if (!Array.isArray(p.guests)) p.guests = [];
+      if (m.add !== undefined) {
+        const to = [...players.values()].find(q => q.id === m.add && q.world === me.world);
+        if (!to) return send(ws, { t: 'err', text: 'Ese jugador ya no está en este mundo.' });
+        if (to.uid === p.owner || isGuest(p, to.uid)) return send(ws, { t: 'err', text: to.name + ' ya es invitado en «' + p.name + '».' });
+        if (p.guests.length >= MAX_GUESTS) return send(ws, { t: 'err', text: 'Máximo ' + MAX_GUESTS + ' invitados por parcela.' });
+        p.guests.push({ uid: to.uid, name: String(to.name).slice(0, 24) });
+      } else if (typeof m.del === 'string') {
+        p.guests = p.guests.filter(g => g.uid !== m.del);
+      } else return;
       persist(); bcast({ t: 'parcels', list: W.parcels }, null, me.world);
     } else if (m.t === 'take') {          // guardar un objeto tuyo en el inventario (se quita del mundo)
       const i = W.items.findIndex(x => x.id === m.id);

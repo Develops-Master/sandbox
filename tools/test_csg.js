@@ -1,7 +1,7 @@
 // node tools/test_csg.js  -> prueba unión / resta / intersección con volúmenes conocidos
 global.window=global;global.self=global;var vm=require('vm'),fs=require('fs'),p=require('path');var P_=p;
-vm.runInThisContext(fs.readFileSync(p.join(__dirname,'../public/three.min.js'),'utf8'));
-global.THREE=window.THREE||THREE;require('../public/prim.js');require('../public/csg.js');
+vm.runInThisContext(fs.readFileSync(p.join(__dirname,'../three.min.js'),'utf8'));
+global.THREE=window.THREE||THREE;require('../prim.js');require('../csg.js');
 function vol(g){var a=g.attributes.position.array,v=0;for(var i=0;i<a.length;i+=9)v+=(a[i]*(a[i+4]*a[i+8]-a[i+5]*a[i+7])-a[i+1]*(a[i+3]*a[i+8]-a[i+5]*a[i+6])+a[i+2]*(a[i+3]*a[i+7]-a[i+4]*a[i+6]))/6;return v}
 var ok=0,bad=0;function t(n,c,x){console.log((c?'OK  ':'FALLA ')+n+(x!==undefined?'  ['+x+']':''));c?ok++:bad++}
 function near(a,b,e){return Math.abs(a-b)<(e||1e-4)}

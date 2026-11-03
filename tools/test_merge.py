@@ -9,7 +9,7 @@ from playwright.sync_api import sync_playwright
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 tmp = tempfile.mkdtemp(prefix='mv_test_')
 for f in ('server.js', 'package.json'): shutil.copy(os.path.join(root, f), tmp)
-shutil.copytree(os.path.join(root, 'public'), os.path.join(tmp, 'public')); shutil.copytree(os.path.join(root, 'node_modules'), os.path.join(tmp, 'node_modules')); os.mkdir(os.path.join(tmp, 'uploads'))
+[shutil.copy(os.path.join(root, f), tmp) for f in ('index.html', 'three.min.js', 'GLTFLoader.js', 'SkeletonUtils.js', 'TransformControls.js', 'csg.js', 'prim.js')]; shutil.copytree(os.path.join(root, 'models'), os.path.join(tmp, 'models')); shutil.copytree(os.path.join(root, 'node_modules'), os.path.join(tmp, 'node_modules')); os.mkdir(os.path.join(tmp, 'uploads'))
 random.seed(5)
 def pieza(i):
     t = ['box', 'cylinder', 'sphere', 'cone'][i % 4]; mat = ['mate', 'metal', 'brillo'][i % 3]
@@ -23,7 +23,7 @@ for i in range(120):
 items[0]['children'][0] = {'children': [pieza(1), pieza(2)], 'pos': [0, 1, 0], 'rot': [0, 0.5, 0], 'scale': [1, 1, 1]}
 items[1]['children'][0]['rules'] = [{'on': {'ev': 'touch'}, 'do': [{'a': 'color', 'color': '#ff0000'}]}]
 json.dump({'next': 200, 'assets': {}, 'inv': {}, 'tpl': {}, 'worlds': {'main': {'name': 'Mundo principal', 'theme': 'pradera', 'owner': '', 'ownerName': 'Sistema', 'created': 0, 'items': items, 'parcels': []}}}, open(os.path.join(tmp, 'world.json'), 'w'))
-p_idx = os.path.join(tmp, 'public', 'index.html'); h = open(p_idx, encoding='utf8').read(); marker = 'var clock=new THREE.Clock();'
+p_idx = os.path.join(tmp, 'index.html'); h = open(p_idx, encoding='utf8').read(); marker = 'var clock=new THREE.Clock();'
 assert h.count(marker) == 1
 hook = ("window.__dbg={renderer:renderer,objs:objs,ser:ser,select:select,cullUpdate:cullUpdate,MM:MM,cam:cam,glow:glow,sel:function(){return sel},"
         "view:function(t,p,r){th=t;ph=p;rad=r;target.set(0,0,0);updCam()}};")

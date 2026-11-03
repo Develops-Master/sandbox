@@ -1,6 +1,6 @@
 {
   "name": "mundo-virtual",
-  "version": "6.51.0",
+  "version": "6.53.0",
   "description": "Mundo 3D multijugador en el navegador (Three.js + Node.js + WebSockets)",
   "main": "server.js",
   "scripts": {

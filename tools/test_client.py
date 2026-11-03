@@ -7,10 +7,10 @@ from playwright.sync_api import sync_playwright
 ap = argparse.ArgumentParser(); ap.add_argument('--puerto', type=int, default=3391); ap.add_argument('--captura', default=''); ap.add_argument('--ws', default='')
 a = ap.parse_args(); root = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); tmp = tempfile.mkdtemp(prefix='mv_cli_')
 for f in ('server.js', 'package.json'): shutil.copy(os.path.join(root, f), tmp)
-shutil.copytree(os.path.join(root, 'public'), os.path.join(tmp, 'public')); os.mkdir(os.path.join(tmp, 'uploads'))
+[shutil.copy(os.path.join(root, f), tmp) for f in ('index.html', 'three.min.js', 'GLTFLoader.js', 'SkeletonUtils.js', 'TransformControls.js', 'csg.js', 'prim.js')]; shutil.copytree(os.path.join(root, 'models'), os.path.join(tmp, 'models')); os.mkdir(os.path.join(tmp, 'uploads'))
 wsd = a.ws or os.path.join(root, 'node_modules', 'ws')
 shutil.copytree(wsd, os.path.join(tmp, 'node_modules', 'ws'))
-pi = os.path.join(tmp, 'public', 'index.html'); h = open(pi, encoding='utf8').read(); mk = 'var clock=new THREE.Clock();'; assert h.count(mk) == 1
+pi = os.path.join(tmp, 'index.html'); h = open(pi, encoding='utf8').read(); mk = 'var clock=new THREE.Clock();'; assert h.count(mk) == 1
 HOOK = ("window.__dbg={get objs(){return objs},get multi(){return multi},get sel(){return sel},get tpls(){return tpls},get me(){return me},addObj:addObj,select:select,get av(){return av},get flying(){return flying},get parcels(){return parcels},get lz(){return lzPool},lzUpdate:lzUpdate,get scene(){return scene},"
         "pickFace:pickFace,renderer:renderer,view:function(t,p,r){th=t;ph=p;rad=r;target.set(0,0.5,0);updCam()}};")
 open(pi, 'w', encoding='utf8').write(h.replace(mk, HOOK + mk))
@@ -198,6 +198,17 @@ return{p:!!o.userData.prim,ft:o.userData.ftex,n:Array.isArray(o.material)?o.mate
         J("()=>{window.__dbg.av.position.set(70,5,70)}"); pg.wait_for_timeout(600)
         t('v6.47: volando, al entrar en una parcela sin vuelo deja de volar y cae', J("()=>window.__dbg.flying") is False and J(Y) < 5)
         pg.wait_for_function("window.__dbg.av.position.y===0", timeout=20000)
+        # ---- v6.52: invitado a volar en una parcela «solo su dueño»
+        J("()=>{window.__dbg.av.position.set(70,0,70)}"); pg.wait_for_timeout(300)
+        pg.keyboard.down('KeyE'); pg.wait_for_timeout(1200); pg.keyboard.up('KeyE')
+        r = J("()=>({f:window.__dbg.flying,m:document.getElementById('msg').textContent})")
+        t('v6.52: sin invitación, el aviso menciona a los invitados', r['f'] is False and 'invitados' in r['m'], r)
+        J("()=>{var d=window.__dbg;d.parcels[0].guests=[{uid:d.me.uid,name:'Yo'}]}")
+        pg.keyboard.down('KeyE'); pg.wait_for_function("window.__dbg.av.position.y>1", timeout=20000); pg.keyboard.up('KeyE')
+        t('v6.52: con invitación sí puede volar en esa parcela', J("()=>window.__dbg.flying"))
+        J("()=>{window.__dbg.av.position.set(70,0,70)}"); pg.wait_for_timeout(600)
+        t('v6.52: al ser invitado no se corta el vuelo dentro de la parcela', J("()=>window.__dbg.flying"))
+        J("()=>{window.__dbg.av.position.set(30,0,30)}"); pg.keyboard.down('KeyC'); pg.wait_for_function("window.__dbg.av.position.y===0", timeout=20000); pg.keyboard.up('KeyC')
         J("()=>{window.__dbg.parcels.length=0;window.__dbg.av.position.set(30,0.5,30)}")
         # ---- v6.48: inclinación al volar
         J("()=>{window.__dbg.av.position.set(30,0,30)}")

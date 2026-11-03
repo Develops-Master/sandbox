@@ -14,27 +14,59 @@ El mundo se guarda en `world.json` (se crea solo). Para empezar de cero, detén 
 
 ## Si ves la pantalla negra
 
-- Abre siempre http://localhost:3001 con el servidor en marcha (`npm start`); no abras `public/index.html` con doble clic.
-- Three.js ya va incluido en `public/three.min.js` (v5.1: antes se descargaba de un CDN y, sin internet o con bloqueadores, la escena no arrancaba).
+- Abre siempre http://localhost:3001 con el servidor en marcha (`npm start`); no abras `index.html` con doble clic.
+- Three.js ya va incluido en `three.min.js` (v5.1: antes se descargaba de un CDN y, sin internet o con bloqueadores, la escena no arrancaba).
 - Si falla algo, ahora aparece un mensaje en pantalla con la causa (por ejemplo, WebGL desactivado).
 
 ## Estructura
 
-- `index.html` (raíz): portada con instrucciones; el cliente real está en `public/`
-- `public/three.min.js`, `TransformControls.js`, `GLTFLoader.js` y `SkeletonUtils.js`: Three.js r128 y sus utilidades, en local
-- `public/models/avatar.glb`: modelo de avatar con esqueleto y animaciones
-- `tools/test_client.py`: prueba de extremo a extremo en Chromium (v6.38; ampliada en v6.39, v6.45 a v6.51)
+- `index.html` (raíz): **el cliente** (ventanas flotantes, editor, avatar y multijugador en un solo archivo). Desde v6.53 ya no hay carpeta `public/` ni portada: la raíz del proyecto es la raíz de la web
+- `three.min.js`, `TransformControls.js`, `GLTFLoader.js` y `SkeletonUtils.js`: Three.js r128 y sus utilidades, en local
+- `models/avatar.glb`: modelo de avatar con esqueleto y animaciones
+- `tools/test_client.py`: prueba de extremo a extremo en Chromium (v6.38; ampliada en v6.39, v6.45 a v6.52)
 - `tools/test_vuelo.js`: prueba del servidor real para la altura del avatar al volar, con dos jugadores (v6.44)
 - `tools/test_facetex.js`: prueba del servidor real para textura, opacidad, transformación de textura, brillo y especular por cara, con datos falsos y limpieza de archivos (v6.39 a v6.43)
-- `public/csg.js` y `tools/test_csg.js`: unión, resta e intersección de sólidos (v6.36; conectado al editor y al servidor en v6.37)
-- `public/prim.js` y `tools/test_prim.js`: generador de prims con corte, hueco, torsión y caras separadas (v6.33; conectado al editor en v6.34)
+- `csg.js` y `tools/test_csg.js`: unión, resta e intersección de sólidos (v6.36; conectado al editor y al servidor en v6.37)
+- `prim.js` y `tools/test_prim.js`: generador de prims con corte, hueco, torsión y caras separadas (v6.33; conectado al editor en v6.34)
 - `Dockerfile`, `.dockerignore` y `tools/test_deploy.js`: publicar y probar el servidor (v6.32)
 - `server.js`: servidor HTTP + WebSocket, validación y guardado del mundo
 - `tools/benchmark.py`: mide el rendimiento del cliente con muchos objetos (ver v6.30 y v6.31)
 - `tools/test_merge.py`: prueba automática de la fusión de objetos lejanos (v6.31)
-- `public/index.html`: cliente (ventanas flotantes, editor, avatar y multijugador en un solo archivo)
 
-## Estado actual (v6.51): joystick analógico (opcional)
+## Estructura y publicación en internet (v6.53)
+
+- **`index.html` está en la raíz** y es el cliente real: `/` lo sirve directamente. Los antiguos `public/*` (`three.min.js`, `GLTFLoader.js`, `SkeletonUtils.js`, `TransformControls.js`, `csg.js`, `prim.js` y `models/avatar.glb`) también viven en la raíz.
+- **El servidor solo sirve una lista cerrada de archivos** (`PUBLIC_FILES` en `server.js`): esos siete archivos y `models/*.glb`, más `/uploads/<hash>` y `/healthz`. Cualquier otra ruta (`/server.js`, `/world.json`, `/package.json`, `/README.md`, `/tools/…`, `/node_modules/…`, intentos con `..`) responde 404. Si añades un archivo que el cliente necesite, hay que añadirlo a esa lista **y** al `COPY` del `Dockerfile` (la prueba `test_deploy.js` avisa si falta).
+- **Node incluido en la imagen**: el `Dockerfile` parte de `node:22-alpine`, así que el servidor donde lo subas solo necesita **Docker**; no hay que instalar Node. Para plataformas sin Docker (Render, Railway, Heroku, un VPS…): `package.json` declara `engines.node >= 18`, `scripts.start` es `node server.js`, y `.nvmrc` / `.node-version` piden Node 22; esas plataformas instalan Node solas con `npm install` y `npm start`. Escucha en `process.env.PORT`.
+- **Datos persistentes**: monta un volumen en `/data` (`DATA_DIR`) o perderás `world.json` y `uploads/` al reiniciar. Ver más abajo (v6.32) las variables `TRUST_PROXY`, `ALLOWED_ORIGINS`, etc.
+- **Qué NO se probó**: `docker build` (no había Docker disponible aquí; sí se probó `npm ci --omit=dev` y el arranque con los mismos archivos que copia el Dockerfile) ni un despliegue real en una plataforma. `world.json` de este paquete es el que traías: el `.dockerignore` lo deja fuera de la imagen para que no se publique tu mundo de pruebas.
+- **Pruebas** (pasan): `test_deploy.js` **37** (+23: `/` sirve el cliente, los 8 archivos públicos se sirven, 14 rutas peligrosas dan 404/400, y el `Dockerfile` trae Node y copia todo); las demás sin cambios (`test_vuelo.js` 33, `test_client.py` 75, `test_csg.js` 22, `test_prim.js` 25, `test_facetex.js`). Las rutas de las pruebas se actualizaron (`tools/*.py` y `*.js` ya no buscan `public/`). Nota: en las secciones históricas de más abajo aún puede aparecer `public/` como se llamaba entonces.
+
+## Estado actual (v6.53): el servidor valida la altura en parcelas «sin vuelo»
+
+- [x] **Cierra el hueco de v6.49**: antes, un cliente modificado que mandara el estado 0 o 3 mientras volaba dentro de una parcela «solo su dueño e invitados» no se detectaba. Ahora, para quien **no tiene permiso** (no es dueño, invitado, creador del mundo ni administrador), el servidor rechaza **cualquier** posición dentro de esa parcela que esté por encima de lo que permiten el suelo, los objetos y un salto, sea cual sea el estado declarado. Lo rechazado no se difunde y el jugador vuelve a su última posición aceptada (con su altura, ya no siempre y = 0). Versión del paquete: 6.53.0.
+- [x] **Cómo se calcula**: `standCeil(W, x, z)` = la parte más alta (centro + radio conservador `itRadius`) de los objetos cuyo círculo cubre ese punto (+1 m de margen), más 1,6 m (un salto del cliente llega a 1 m: velocidad 6, gravedad 18, más margen). Por debajo de 1,6 m ni se calcula (no cuesta nada en el caso normal). Subirse a una torre o a un tejado sigue siendo legítimo.
+- [x] **Pruebas** (pasan): `node tools/test_vuelo.js` **33** (+7: 20 m con estado 0 y con estado 3 se rechazan, un salto de 1 m se difunde, una torre de 10 m puesta por el dueño: subido encima (10,5 m) vale y a 60 m no, fuera de la parcela no se restringe); `test_client.py` 75, `test_facetex.js`, `test_csg.js` 22, `test_prim.js` 25 y `test_deploy.js` sin cambios.
+- **Límites**: es una cota **conservadora**, no exacta: el servidor no conoce la forma real de los objetos (usa una esfera que los envuelve), así que alguien podría volar «pegado» por encima de un objeto grande o hueco hasta unos metros; un grupo enorme da un techo alto en toda su zona. Solo protege las parcelas con «solo yo e invitados» (el terreno libre y las parcelas «cualquiera» no se restringen, hasta los 150 m de siempre). Un jugador que se teletransporte desde «lugares guardados» a una altura mayor al techo dentro de una parcela protegida será devuelto. Un cliente modificado aún puede moverse por el suelo a cualquier velocidad (no se valida la velocidad).
+- **Qué NO se probó**: con jugadores reales en navegador (solo mensajes al servidor), con objetos girados o modelos `.glb` muy grandes, ni el coste con 5000 objetos y muchos jugadores moviéndose a la vez dentro de una parcela protegida (el recorrido es lineal en el número de objetos, pero solo se hace si se está por encima de 1,6 m).
+- **Pendiente**: validar la velocidad de movimiento; tamaño ajustable del joystick y probar en celular real; inclinación según la velocidad.
+
+### Detalle: invitados para volar y construir (v6.52)
+
+- [x] **Invitados también construyen**: en una parcela con «construir: solo yo», los invitados de la lista (v6.52) pueden **colocar objetos** además de volar. El servidor (`canPlace`) los deja pasar y el aviso a los demás dice «solo su dueño e invitados pueden construir ahí». La lista de parcelas y el texto de «Estás en…» muestran «su dueño e invitados» cuando hay invitados. Es una sola lista para ambas cosas (no hay invitados «solo volar» o «solo construir»).
+- [x] **Pruebas** (pasan): `node tools/test_vuelo.js` **26** (+3: sin invitación se rechaza con aviso, con invitación se construye, al quitarla se vuelve a rechazar).
+- **Límites**: el invitado solo puede construir **hasta el máximo de objetos** de la parcela; quien creó el mundo y el administrador siguen sin poder construir en «solo yo» (como antes); solo se invita a quien está conectado.
+
+### Detalle: lista de invitados para volar
+
+- [x] **Parcelas → «Volar: solo yo e invitados»** (antes «solo yo»): el dueño de la parcela (o quien creó el mundo, o el administrador) ve ahora debajo del selector una **lista de invitados** con ✕ para quitarlos y un selector con los **jugadores presentes** en el mundo + botón **Invitar**. Los invitados pueden volar en esa parcela aunque el permiso sea «solo yo e invitados». Máximo 10 invitados por parcela. Se guarda con la parcela en `world.json` (campo `guests: [{uid, name}]`; las parcelas anteriores no lo tienen y funcionan igual). Versión del paquete: 6.52.0.
+- [x] **Servidor**: mensaje nuevo `pguest` con `add` (id del jugador presente en el mundo) o `del` (uid del invitado); solo lo aceptan el dueño de la parcela, quien creó el mundo o el administrador. No duplica invitados, avisa si el jugador ya no está o si se llegó al máximo. La comprobación de v6.49 (no difundir «volando» sin permiso) ahora también deja pasar a los invitados. El cliente (`noFlyHere`) hace lo mismo y el aviso dice «solo su dueño e invitados».
+- [x] **Pruebas** (pasan): `node tools/test_vuelo.js` **23** (+8: un no-dueño no puede invitar, el dueño invita, no se duplica, el invitado vuela sin rebote, al quitarlo vuelve a rebotar, jugador inexistente da aviso); `python3 tools/test_client.py` **75** (+3: el aviso menciona a los invitados, con invitación vuela, no se corta el vuelo dentro de la parcela).
+- **Qué NO se probó**: la lista de invitados y el botón **Invitar** hechos clic a clic en un navegador con dos jugadores reales (se probó por mensajes al servidor y con la parcela modificada por código en el cliente); la lista con nombres muy largos o en pantallas estrechas.
+- **Límites**: sigue sin ser seguridad fuerte (ver v6.49: el servidor solo ve lo que el cliente declara); los invitados se identifican por el código del navegador (uid), así que si alguien borra sus datos pierde la invitación; solo se puede invitar a quien está conectado en ese momento; la invitación solo afecta a volar (no a construir).
+- **Pendiente**: validar alturas en el servidor; tamaño ajustable del joystick y probar en celular real; inclinación según la velocidad.
+
+## Estado anterior (v6.51): joystick analógico (opcional)
 
 - [x] **Ajustes → «Caminar con»**: selector **Cruz de 4 flechas** (como en v6.45, sigue siendo lo predeterminado) o **Joystick**. Con el joystick, a la izquierda aparece un círculo de 150 px con una perilla: **empujas hacia donde quieres ir y la velocidad depende de cuánto lo empujes** (zona muerta del 15 %; velocidad completa a partir del 85 % del recorrido). Funciona igual caminando que volando (los botones de la derecha no cambian). Se recuerda en el navegador (`mv_tpadmode`). Solo cliente; el servidor no cambia. Versión del paquete: 6.51.0.
 - [x] **Cómo funciona**: el joystick escribe un vector (`joy`) que `step()` usa en lugar de las teclas cuando pasa la zona muerta, y escala la velocidad (`jsc`). La dirección sigue siendo relativa a la cámara, como con las teclas.
@@ -537,7 +569,7 @@ El mundo se guarda en `world.json` (se crea solo). Para empezar de cero, detén 
 - [x] **Ejes de edición con el ratón (v5.2)**: flechas para mover (también en altura), anillos para girar y cubos para escalar. Teclas `1` mover, `2` girar, `3` escalar, `Q` ejes de mundo/locales, `F` enfocar la selección
 - [x] **Deshacer y rehacer (v5.2)**: `Ctrl/Cmd+Z` y `Ctrl/Cmd+Mayús+Z` (o `Ctrl+Y`), hasta 100 pasos, sincronizado con el servidor
 - [x] **Copiar arrastrando (v5.2)**: mantén `Alt` (Opción en Mac) al arrastrar un eje
-- [x] **Avatar glTF con esqueleto y animaciones (v5.3)**: todos los jugadores usan el mismo modelo y esqueleto (`public/models/avatar.glb`) con reposo, caminar, correr (`Mayús`) y saltar. Cada jugador tiene su color, y los demás ven su animación en tiempo real
+- [x] **Avatar glTF con esqueleto y animaciones (v5.3)**: todos los jugadores usan el mismo modelo y esqueleto (`models/avatar.glb`) con reposo, caminar, correr (`Mayús`) y saltar. Cada jugador tiene su color, y los demás ven su animación en tiempo real
 - [x] **Accesorios (v5.4)**: selecciona un objeto o grupo y elige *Acoplar a la cabeza* o *a la mano* en el inspector. Se mueve con el avatar y con sus animaciones, y los demás lo ven puesto. La posición, el giro y el tamaño pasan a ser relativos al avatar (en metros) y se ajustan con los ejes. Elegir *en el mundo* lo suelta donde está. Los accesorios no bloquean el paso
 - [x] **Gestos (v5.3)**: Saludar, Bailar y Pulgar arriba, visibles para todos (se cancelan al moverte)
 - [x] **Selección múltiple completa (v5.2)**: mover, girar y escalar varios objetos a la vez con un solo gizmo, y cambiar color, material y textura de toda la selección o de un grupo
@@ -557,9 +589,9 @@ El mundo se guarda en `world.json` (se crea solo). Para empezar de cero, detén 
 - La complexión estira el avatar en ancho; los accesorios acoplados escalan con él y, con valores extremos, pueden verse algo deformados.
 - El color principal tiñe el material `Main` del modelo y el de detalles el material `Grey`; los materiales de otro avatar con otros nombres no se teñirían.
 - Los accesorios solo se ven mientras su dueño está conectado. Si se desconecta, desaparecen del mundo y vuelven cuando regresa. Un objeto acoplado no se puede duplicar ni desagrupar: suéltalo antes en el mundo.
-- Los accesorios usan los huesos `Head_1` (cabeza) y `Palm2R` (mano derecha) del modelo; si cambias de avatar, ajusta `BONES` en `public/index.html`.
+- Los accesorios usan los huesos `Head_1` (cabeza) y `Palm2R` (mano derecha) del modelo; si cambias de avatar, ajusta `BONES` en `index.html`.
 
-- Para cambiar de avatar, sustituye `public/models/avatar.glb` por otro glTF/GLB con esqueleto y animaciones llamadas `Idle`, `Walking`, `Running` y `Jump` (y opcionalmente `Wave`, `Dance`, `ThumbsUp`). El material llamado `Main` se tiñe con el color de cada jugador.
+- Para cambiar de avatar, sustituye `models/avatar.glb` por otro glTF/GLB con esqueleto y animaciones llamadas `Idle`, `Walking`, `Running` y `Jump` (y opcionalmente `Wave`, `Dance`, `ThumbsUp`). El material llamado `Main` se tiñe con el color de cada jugador.
 - Créditos: el modelo es *RobotExpressive* (Tomás Laulhé, modificado por Don McCurdy), licencia CC0, incluido en los ejemplos de Three.js.
 - No hay cuentas ni contraseñas: el código del navegador es la única identidad.
 - Los cambios de otros jugadores se ven al soltar el objeto, no mientras lo arrastran.

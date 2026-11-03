@@ -1,7 +1,7 @@
 // node tools/test_prim.js  -> comprueba volumen, orientación de normales y grupos de primGeo
 global.window=global;global.self=global;var vm=require('vm'),fs=require('fs'),p=require('path');
-vm.runInThisContext(fs.readFileSync(p.join(__dirname,'../public/three.min.js'),'utf8'));
-global.THREE=window.THREE||THREE;require('../public/prim.js');
+vm.runInThisContext(fs.readFileSync(p.join(__dirname,'../three.min.js'),'utf8'));
+global.THREE=window.THREE||THREE;require('../prim.js');
 function vol(g){var a=g.attributes.position.array,v=0;for(var i=0;i<a.length;i+=9){var x1=a[i],y1=a[i+1],z1=a[i+2],x2=a[i+3],y2=a[i+4],z2=a[i+5],x3=a[i+6],y3=a[i+7],z3=a[i+8];
  v+=(x1*(y2*z3-z2*y3)-y1*(x2*z3-z2*x3)+z1*(x2*y3-y2*x3))/6}return v}
 var ok=0,bad=0;function t(n,c){console.log((c?'OK  ':'FALLA ')+n);c?ok++:bad++}
